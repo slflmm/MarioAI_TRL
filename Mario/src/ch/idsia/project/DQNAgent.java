@@ -1,55 +1,87 @@
 package ch.idsia.project;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+
+import java.util.Random;
 
 import ch.idsia.agents.Agent;
 import ch.idsia.benchmark.mario.environments.Environment;
 import ch.idsia.evolution.MLP;
 
-public class DQNAgent extends AgentUtils implements Agent {
+public class DQNAgent extends UtilAgent implements Agent {
 	
-	private static Map<Integer, int[]> twelveToSixMap;
-	
-	
-	private MLP mlp;
 	static private final String name = "DQNAgent";
-	
 
-	public DQNAgent(MLP mlp) {
-		// TODO Whatever you end up needing here
+	private MLP mlp;
+	private double gamma;
+	private double epsilon = 0.9999;
+	private Random rng;
+
+	public DQNAgent(MLP mlp, double gamma) {
 		super(name);
 		this.mlp = mlp;
-		initializeActionMap();
+		this.gamma = gamma;
+		rng = new Random();
+	}
+	
+	/**
+	 * Given a minibatch of transitions, performs gradient descent
+	 * @param states
+	 * @param rewards
+	 * @param actions
+	 */
+	public void train(double[][] states, double[] rewards, int[] actions, double[][] nextStates, boolean[] terminal, int batchSize) {
+
+		// calculate target values for the actions
+		double[][] y = new double[batchSize][12];
+		for (int j = 0; j < batchSize; j++) {
+			double[] Qsa = mlp.propagate(states[j]); // get the current Q(s,a) values for that state
+			for (int i = 0; i < 12; i++) {
+				y[j][i] = Qsa[i]; // if it's not the action we did, leave it the same
+			}
+			// modify the Q-value for the action we did 
+			if (terminal[j] == true) y[j][actions[j]] = rewards[j]; 
+			else {
+				y[j][actions[j]] = rewards[j] + gamma*max(mlp.propagate(nextStates[j]));
+			}
+		}
+		// next perform back propagation on target - current Q 
+		for (int j = 0; j < batchSize; j++) {
+			mlp.propagate(states[j]); // this is a pain...
+			mlp.backPropagate(y[j]);
+		}
 	}
 
 	/**
-	 * Returns action based on current policy, as an array of 6 booleans on the Mario keys.
+	 * Returns action based on current policy.
+	 * eps --> true means we are using epsilon-greedy
 	 */
-	@Override
-	public boolean[] getAction() {
-		// TODO integrate with neural network and save to replay memory
-		
-		int[] output = new int[12]; // assume this is the output of the MLP
-		return twelveToSixActions(output);
+	public int getAction(double[] state, boolean eps) {
+		int a;
+		if (eps && Math.random() < epsilon) {
+			a = rng.nextInt(12);
+			epsilon*=0.9999;
+//			System.out.println(epsilon);
+		}
+		else a = argmax(mlp.propagate(state));
+		return a;
 	}
 
 
-	@Override
-	public void integrateObservation(Environment environment) {
-		// TODO Store the state array in replay memory
-		int[] state = getState(environment);
-		
+	/**
+	 * Builds state vector from the environment.
+	 */
+	public double[] getState(Environment environment) {
+		return super.getState(environment);
 	}
 	
 
-
-	@Override
-	public void giveIntermediateReward(float intermediateReward) {
-		// TODO Store sequence of rewards and states separately to avoid duplication in states if storing transitions
-		
+	/**
+	 * Calculate reward based on advancement.
+	 */
+	public double getReward(Environment environment) {
+		return super.getReward(environment);
 	}
+
 
 	@Override
 	public void reset() {
@@ -57,55 +89,9 @@ public class DQNAgent extends AgentUtils implements Agent {
 		
 	}
 	
+
 	
-	/**
-	 * Maps the neural net's 12 one-hot actions to the 6 boolean keys.
-	 * In order, the keys represent 0=LEFT, 1=RIGHT, 2=DOWN, 3=JUMP, 4=SPEED, and 5=UP (see Mario.java)
-	 * The agent only considers 12 actions from the space of 64: 
-	 * {LEFT, RIGHT, STAY} x {JUMP, NOTJUMP} x {SPEED(FIRE), NOSPEED}.
-	 * @param twelve
-	 * @return
-	 */
-	private static boolean[] twelveToSixActions(int[] twelve) {
-		boolean[] six = new boolean[6];
-		Integer action = Arrays.asList(twelve).indexOf(1);
-		int[] idx = twelveToSixMap.get(action);
-		for (int i : idx) {
-			six[i] = true;
-		}
-		return six;
-	}
-	
-	/**
-	 * Mapping from one-hot encoding of 12 states to true indices in Mario 
-	 * 0= stay, no jump, no speed (none active)
-	 * 1= left, no jump, no speed (0)
-	 * 2= right, no jump, no speed (1)
-	 * 3= stay, jump, no speed (3)
-	 * 4= left, jump, no speed (0,3)
-	 * 5= right, jump, no speed (1,3)
-	 * 6= stay, no jump, speed (4)
-	 * 7= left, no jump, speed (0,4)
-	 * 8= right, no jump, speed (1,4)
-	 * 9= stay, jump, speed (3,4)
-	 * 10= left, jump, speed (0,3,4)
-	 * 11= right, jump, speed (1,3,4)
-	 */
-	private static void initializeActionMap() {
-		twelveToSixMap = new HashMap<Integer, int[]>(12);
-		twelveToSixMap.put(0, new int[]{});
-		twelveToSixMap.put(1, new int[]{0});
-		twelveToSixMap.put(2, new int[]{1});
-		twelveToSixMap.put(3, new int[]{3});
-		twelveToSixMap.put(4, new int[]{0,3});
-		twelveToSixMap.put(5, new int[]{1,3});
-		twelveToSixMap.put(6, new int[]{4});
-		twelveToSixMap.put(7, new int[]{0,4});
-		twelveToSixMap.put(8, new int[]{1,4});
-		twelveToSixMap.put(9, new int[]{3,4});
-		twelveToSixMap.put(10, new int[]{0,3,4});
-		twelveToSixMap.put(11, new int[]{1,3,4});
-	}
+
 	
 
 	
